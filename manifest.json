@@ -1,0 +1,30 @@
+{
+  "manifest_version": 3,
+  "name": "Environmental Impact Panel",
+  "version": "2.0",
+  "description": "Token tracking and environmental impact estimation for ChatGPT",
+  "host_permissions": [
+    "https://scraper.ahmansonlab.workers.dev/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": ["https://chatgpt.com/*", "https://chat.openai.com/*"],
+      "css": ["side_panel.css"],
+      "js": ["side_panel.js"],
+      "run_at": "document_start",
+      "world": "MAIN"
+    },
+    {
+      "matches": ["https://chatgpt.com/*", "https://chat.openai.com/*"],
+      "js": ["helper.js"],
+      "run_at": "document_start",
+      "world": "ISOLATED"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["data_center_images/*"],
+      "matches": ["https://chatgpt.com/*", "https://chat.openai.com/*"]
+    }
+  ]
+}
