@@ -223,6 +223,18 @@
   border-top: 1px solid var(--sp-border);
 }
 
+/* Layout-change warning */
+.sp-warning {
+  font-size: 11px;
+  line-height: 1.5;
+  color: #92400e;
+  background: #fef3c7;
+  border: 1px solid #fcd34d;
+  border-radius: 6px;
+  padding: 8px 10px;
+  margin-bottom: 14px;
+}
+
 /* =============================================
    TOKENS TAB
    ============================================= */
