@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "Environmental Impact Panel",
+  "name": "Environmental Impact Tracker 3.0",
   "version": "2.0",
   "description": "Token tracking and environmental impact estimation for ChatGPT",
   "host_permissions": [

@@ -115,6 +115,69 @@ function lookupDatacenter(region) {
 }
 
 // =============================================
+// MESSAGE LAYOUTS
+// ChatGPT's markup changes without notice, and changes roll out
+// gradually, so different users may see different layouts at the
+// same time. Each layout below was confirmed by inspecting the live
+// page. The first one found on the page is used. When ChatGPT changes
+// again, add the new layout to the TOP of this list.
+// =============================================
+
+const MESSAGE_LAYOUTS = [
+  {
+    // Confirmed Nov 2026. One element per message; the role is the
+    // suffix of the value, e.g. "fallback-turn-0:0:user" and
+    // "fallback-turn-0:1:assistant". Matched by suffix so a change
+    // to the "fallback-turn" prefix won't break it.
+    name: 'data-content-search-unit-key',
+    all: '[data-content-search-unit-key]',
+    assistant: '[data-content-search-unit-key$=":assistant"]',
+    // Wraps a whole exchange (user message + response)
+    turn: '[data-content-search-turn-key]',
+  },
+  {
+    // Original layout, before Nov 2026
+    name: 'data-message-author-role',
+    all: '[data-message-author-role]',
+    assistant: '[data-message-author-role="assistant"]',
+    turn: null,
+  },
+];
+
+// Drop any element nested inside another match so nothing is counted twice
+function outermostOnly(els) {
+  return els.filter(el => !els.some(other => other !== el && other.contains(el)));
+}
+
+function detectLayout() {
+  return MESSAGE_LAYOUTS.find(layout => document.querySelector(layout.all)) || null;
+}
+
+// Every message on the page, user and assistant
+function getAllMessages() {
+  const layout = detectLayout();
+  return layout ? outermostOnly(Array.from(document.querySelectorAll(layout.all))) : [];
+}
+
+// All assistant content from the most recent exchange.
+// A single response can span several units (e.g. when ChatGPT searches),
+// so this returns every assistant unit in the latest turn.
+function getLatestAssistantMessages() {
+  const layout = detectLayout();
+  if (!layout) return [];
+  if (layout.turn) {
+    const turns = document.querySelectorAll(layout.turn);
+    const lastTurn = turns[turns.length - 1];
+    if (lastTurn) {
+      const units = outermostOnly(Array.from(lastTurn.querySelectorAll(layout.assistant)));
+      if (units.length) return units;
+    }
+  }
+  const asst = document.querySelectorAll(layout.assistant);
+  return asst.length ? [asst[asst.length - 1]] : [];
+}
+
+// =============================================
 // INPUT TOKEN ESTIMATION
 // =============================================
 
@@ -129,10 +192,9 @@ function countWords(text) {
 // Every message visible in the DOM (user + assistant) will be re-sent as
 // context when the next prompt is submitted.
 function estimateInputTokensFromDOM() {
-  const allMessages = document.querySelectorAll('[data-message-author-role]');
   let totalWords = 0;
 
-  allMessages.forEach(msg => {
+  getAllMessages().forEach(msg => {
     totalWords += countWords(msg.textContent);
   });
 
@@ -147,13 +209,11 @@ function extractSearchUrlsFromDOM() {
   const urls = [];
   const queries = [];
 
-  const assistantMsgs = document.querySelectorAll('[data-message-author-role="assistant"]');
-  if (assistantMsgs.length === 0) return { urls, queries };
-
-  const latestMsg = assistantMsgs[assistantMsgs.length - 1];
+  const latestUnits = getLatestAssistantMessages();
+  if (latestUnits.length === 0) return { urls, queries };
 
   // Grab all links in the response that point to external sites
-  const links = latestMsg.querySelectorAll('a[href]');
+  const links = latestUnits.flatMap(unit => Array.from(unit.querySelectorAll('a[href]')));
   links.forEach(link => {
     const href = link.href;
     if (!href) return;
@@ -388,13 +448,24 @@ function onStreamComplete(urls, queries) {
 
   // Fallback: if the stream didn't include a token_count patch,
   // estimate output tokens from the latest assistant message on the page
-  if (lastOutput === 0) {
-    const assistantMsgs = document.querySelectorAll('[data-message-author-role="assistant"]');
-    if (assistantMsgs.length > 0) {
-      const latestMsg = assistantMsgs[assistantMsgs.length - 1];
-      lastOutput = Math.round(countWords(latestMsg.textContent) * 1.3);
-    }
+  const latestUnits = getLatestAssistantMessages();
+  const outputFromStream = lastOutput > 0;
+  if (!outputFromStream) {
+    const words = latestUnits.reduce((sum, unit) => sum + countWords(unit.textContent), 0);
+    lastOutput = Math.round(words * 1.3);
   }
+
+  // Diagnostics: report which layout matched, and warn in the panel if none did
+  const layout = detectLayout();
+  const allMessages = getAllMessages();
+  console.log(
+    `[ToolPanel] Layout: ${layout ? layout.name : 'NO MATCH'} | ` +
+    `messages on page: ${allMessages.length} | ` +
+    `assistant units in latest turn: ${latestUnits.length} | ` +
+    `output count from: ${outputFromStream ? 'stream token_count' : 'word-count estimate'}`
+  );
+  const warningEl = document.getElementById('sp-dom-warning');
+  if (warningEl) warningEl.style.display = allMessages.length === 0 ? 'block' : 'none';
 
   lastSearch = 0; // Will be updated after scraping
 
@@ -893,6 +964,10 @@ function buildPanelHTML() {
 
       <!-- ====== TOKENS TAB ====== -->
       <div class="sp-tab-panel sp-active" id="sp-tab-tokens">
+
+        <div id="sp-dom-warning" class="sp-warning" style="display:none;">
+          Can't find chat messages on this page. ChatGPT may have changed its layout, so input and output counts may read zero or too low.
+        </div>
 
         <!-- Last Request -->
         <div class="sp-block">
